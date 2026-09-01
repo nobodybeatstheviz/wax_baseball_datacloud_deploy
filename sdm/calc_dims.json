@@ -1,0 +1,8 @@
+[
+  {
+    "label": "Game Year",
+    "dataType": "Text",
+    "expression": "YEAR([Attended_Games].[Game_Date])",
+    "apiName": "Game_Year"
+  }
+]

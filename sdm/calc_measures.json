@@ -1,0 +1,72 @@
+[
+  {
+    "label": "Games Attended",
+    "dataType": "Number",
+    "aggregationType": "UserAgg",
+    "expression": "COUNT([Attended_Games].[Wax_Game_ID])",
+    "apiName": "Games_Attended"
+  },
+  {
+    "label": "Unique Stadiums",
+    "dataType": "Number",
+    "aggregationType": "UserAgg",
+    "expression": "COUNTD([Attended_Games].[Venue])",
+    "apiName": "Unique_Stadiums"
+  },
+  {
+    "label": "Home Runs Witnessed",
+    "dataType": "Number",
+    "aggregationType": "UserAgg",
+    "expression": "SUM(IIF([Plays].[event_code] = 23, 1, 0))",
+    "apiName": "Home_Runs_Witnessed"
+  },
+  {
+    "label": "Runs Witnessed",
+    "dataType": "Number",
+    "aggregationType": "UserAgg",
+    "expression": "SUM([Plays].[runs_on_play])",
+    "apiName": "Runs_Witnessed"
+  },
+  {
+    "label": "Team Wins Attended",
+    "dataType": "Number",
+    "aggregationType": "UserAgg",
+    "expression": "SUM(IIF([Attended_Team_Games].[team_won] = true, 1, 0))",
+    "apiName": "Team_Wins_Attended"
+  },
+  {
+    "label": "Team Games Decided",
+    "dataType": "Number",
+    "aggregationType": "UserAgg",
+    "expression": "SUM(IIF([Attended_Team_Games].[is_decided] = true, 1, 0))",
+    "apiName": "Team_Games_Decided"
+  },
+  {
+    "label": "Attended Win Rate",
+    "dataType": "Number",
+    "aggregationType": "UserAgg",
+    "expression": "SUM(IIF([Attended_Team_Games].[team_won] = true, 1, 0)) / SUM(IIF([Attended_Team_Games].[is_decided] = true, 1, 0))",
+    "apiName": "Attended_Win_Rate"
+  },
+  {
+    "label": "Games per Attendee",
+    "dataType": "Number",
+    "aggregationType": "UserAgg",
+    "expression": "COUNT([Game_Attendee].[game_attendee_key])",
+    "apiName": "Games_per_Attendee"
+  },
+  {
+    "label": "Hall of Famers Seen",
+    "dataType": "Number",
+    "aggregationType": "UserAgg",
+    "expression": "COUNTD([HOF_Sightings].[player_id])",
+    "apiName": "Hall_of_Famers_Seen"
+  },
+  {
+    "label": "HOF Batters Seen (native graph)",
+    "dataType": "Number",
+    "aggregationType": "UserAgg",
+    "expression": "COUNTD(IIF([Lahman_Hall_Of_Fame].[inducted] = 'Y' AND [Lahman_Hall_Of_Fame].[category] = 'Player' AND [Plays].[was_attended] = true, [Lahman_People].[playerID], NULL))",
+    "apiName": "HOF_Batters_Seen_Graph"
+  }
+]

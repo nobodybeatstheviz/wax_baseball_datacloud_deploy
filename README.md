@@ -35,3 +35,29 @@ Partner case #474498479 clears). Everything here is generator-shaped:
 - A NEW org needs the two connections created first (GUI: BigQuery service
   account key + Databricks host/warehouse/PAT-as-password) — connector
   creation is the one non-headless step; everything after is this repo.
+
+## The SDM (Keeping_Score) — verified 2026-09-01, all seven governed metrics exact
+
+`apply_sdm.py --org <alias>` replays relationships + calculated measures/dims
+(the SDM shell + data objects go through the d360 MCP, which works for those).
+Golden battery through the semantic model: games 178 · stadiums 22 · HR 400 ·
+runs 1706 · by-year exact (2001=17, 2003=17) · NYA 90/143 = .63 · top
+attendees exact · Hall of Famers Seen 44.
+
+SDM findings (each cost a real error):
+- The d360 MCP's relationship create MANGLES the criteria array — relationships
+  must go raw REST (`sf api request rest`). Its calc-measure update PATCHes
+  where the API allows only PUT (delete + recreate instead).
+- Creates WITHOUT an explicit apiName duplicate silently (auto-suffix `1`);
+  with an explicit apiName they are idempotent. Always set apiName.
+- A Text calc dimension rejects Integer expressions — the formula dialect is
+  Tableau-flavored: STR(YEAR([...])).
+- **Join-graph semantics**: a measure's query joins ONLY the objects its
+  expression references. The HOF count over People+HallOfFame alone returned
+  281 (all inducted players — nothing forced the "seen" path); adding
+  [Plays] to the expression forced the four-way traversal and returned 35 —
+  batters only, since the graph has a single People→Plays edge (batter_id).
+  The contract's 44 (batters ∪ pitchers) rides the streamed fct_hof_sightings
+  mart; the graph-native 35 is kept as HOF_Batters_Seen_Graph, the
+  single-path-vs-union lesson made queryable. Query measures in MINIMAL
+  graphs — unrelated-object fan-out is the failure mode.

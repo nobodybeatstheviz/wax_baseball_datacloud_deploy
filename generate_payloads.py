@@ -26,6 +26,7 @@ STREAMS = [
     ("bigquery",   "BigQuery_Baseball",   BQ_PROJECT,        "wax_baseball_dbt", "fct_game_attendee",       "game_attendee_key", "Fct_Game_Attendee",       "Fct Game Attendee",        "Fct_Game_Attendee__dll"),
     ("bigquery",   "BigQuery_Baseball",   BQ_PROJECT,        "wax_baseball_dbt", "fct_plays",               "play_key",          "Fct_Plays",               "Fct Plays",                "Fct_Plays__dll"),
     ("bigquery",   "BigQuery_Baseball",   BQ_PROJECT,        "wax_baseball_dbt", "fct_attended_team_games", "team_game_key",     "Fct_Attended_Team_Games", "Fct Attended Team Games",  "Fct_Attended_Team_Games__dll"),
+    ("bigquery",   "BigQuery_Baseball",   BQ_PROJECT,        "wax_baseball_dbt", "fct_hof_sightings",       "player_id",         "Fct_Hof_Sightings",       "Fct Hof Sightings",        "Fct_Hof_Sightings__dll"),
     ("databricks", "Databricks_Baseball", "lahman_baseball", "baseball_data",    "people",                  "playerID",          "Lahman_People",           "Lahman People",            "Lahman_People__dll"),
     ("databricks", "Databricks_Baseball", "lahman_baseball", "baseball_data",    "halloffame",              "playerID",          "Lahman_Hall_Of_Fame",     "Lahman Hall Of Fame",      "Lahman_Hall_Of_Fame__dll"),
 ]

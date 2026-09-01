@@ -1,0 +1,57 @@
+[
+  {
+    "label": "Game to Plays",
+    "apiName": "Game_to_Plays",
+    "leftSemanticDefinitionApiName": "Attended_Games",
+    "rightSemanticDefinitionApiName": "Plays",
+    "cardinality": "OneToMany",
+    "joinType": "Auto",
+    "criteria": [
+      {"joinOperator": "Equals", "leftFieldType": "TableField", "leftSemanticFieldApiName": "Wax_Game_ID", "rightFieldType": "TableField", "rightSemanticFieldApiName": "game_id"}
+    ]
+  },
+  {
+    "label": "Game to Attendees",
+    "apiName": "Game_to_Attendees",
+    "leftSemanticDefinitionApiName": "Attended_Games",
+    "rightSemanticDefinitionApiName": "Game_Attendee",
+    "cardinality": "OneToMany",
+    "joinType": "Auto",
+    "criteria": [
+      {"joinOperator": "Equals", "leftFieldType": "TableField", "leftSemanticFieldApiName": "Wax_Game_ID", "rightFieldType": "TableField", "rightSemanticFieldApiName": "wax_game_id1"}
+    ]
+  },
+  {
+    "label": "Game to Team Games",
+    "apiName": "Game_to_Team_Games",
+    "leftSemanticDefinitionApiName": "Attended_Games",
+    "rightSemanticDefinitionApiName": "Attended_Team_Games",
+    "cardinality": "OneToMany",
+    "joinType": "Auto",
+    "criteria": [
+      {"joinOperator": "Equals", "leftFieldType": "TableField", "leftSemanticFieldApiName": "Wax_Game_ID", "rightFieldType": "TableField", "rightSemanticFieldApiName": "wax_game_id2"}
+    ]
+  },
+  {
+    "label": "Player to Plays (retroID bridge)",
+    "apiName": "Player_to_Plays",
+    "leftSemanticDefinitionApiName": "Lahman_People",
+    "rightSemanticDefinitionApiName": "Plays",
+    "cardinality": "OneToMany",
+    "joinType": "Auto",
+    "criteria": [
+      {"joinOperator": "Equals", "leftFieldType": "TableField", "leftSemanticFieldApiName": "retroID", "rightFieldType": "TableField", "rightSemanticFieldApiName": "batter_id"}
+    ]
+  },
+  {
+    "label": "Player to Hall of Fame",
+    "apiName": "Player_to_Hall_of_Fame",
+    "leftSemanticDefinitionApiName": "Lahman_People",
+    "rightSemanticDefinitionApiName": "Lahman_Hall_Of_Fame",
+    "cardinality": "OneToMany",
+    "joinType": "Auto",
+    "criteria": [
+      {"joinOperator": "Equals", "leftFieldType": "TableField", "leftSemanticFieldApiName": "playerID", "rightFieldType": "TableField", "rightSemanticFieldApiName": "playerID1"}
+    ]
+  }
+]
