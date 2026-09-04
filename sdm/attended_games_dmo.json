@@ -1,0 +1,20 @@
+{
+  "_comment": "Attended_Games__dlm DMO — captured verbatim from devorg (d360_dmo_get 2026-09-03). The ONE data object the Keeping_Score SDM references as a Dmo (the other six ride their DLOs directly). It stays a DMO because its SDM measures use title-cased field names — [Attended_Games].[Wax_Game_ID], [Venue], [Game_Date] — which DMOs produce and DLOs (source-cased) do not. 'name' omits the __dlm suffix (the API appends it). System fields (DataSource__c, DataSourceObject__c, InternalOrganization__c, KQ_*) are auto-added by the platform. dataType/label/PK match devorg exactly.",
+  "name": "Attended_Games",
+  "label": "Attended Games",
+  "category": "Other",
+  "dataSpaceName": "default",
+  "description": "Games George personally attended — the 178-game spine. One row per attended game: date, both teams (name + Retrosheet code), venue, location, and game type. Source: BigQuery wax_baseball.attended_games via the Attended Games data stream.",
+  "fields": [
+    { "name": "Wax_Game_ID", "label": "Wax Game ID", "dataType": "Text", "isPrimaryKey": true },
+    { "name": "Game_Date",   "label": "Game Date",   "dataType": "Date", "isPrimaryKey": false },
+    { "name": "Away_Team",    "label": "Away Team",    "dataType": "Text", "isPrimaryKey": false },
+    { "name": "Away_Team_ID", "label": "Away Team ID", "dataType": "Text", "isPrimaryKey": false },
+    { "name": "Home_Team",    "label": "Home Team",    "dataType": "Text", "isPrimaryKey": false },
+    { "name": "Home_Team_ID", "label": "Home Team ID", "dataType": "Text", "isPrimaryKey": false },
+    { "name": "Venue",        "label": "Venue",        "dataType": "Text", "isPrimaryKey": false },
+    { "name": "City",         "label": "City",         "dataType": "Text", "isPrimaryKey": false },
+    { "name": "State",        "label": "State",        "dataType": "Text", "isPrimaryKey": false },
+    { "name": "Game_Type",    "label": "Game Type",    "dataType": "Text", "isPrimaryKey": false }
+  ]
+}

@@ -20,16 +20,37 @@ PAYLOAD_DIR = pathlib.Path(__file__).resolve().parent / "payloads"
 BQ_PROJECT = "augmented-world-262319"
 DBX_PROFILE = "wax_baseball"
 DBX_HTTP_PATH = "/sql/1.0/warehouses/873a5fb5d84620c1"
+SNOW_CONN = "wax_baseball_key"  # snow CLI connection (keypair)
 
+# HEADLESS two-cloud federation (ruled 2026-09-04): Snowflake (WAX_BASEBALL marts) +
+# Databricks (Lahman). BigQuery is dropped from this org — its connector is ACCESS_CHECK
+# (org-entitlement wall, not client-fixable; the API is open and creds are valid, but the
+# connector isn't provisioned for the scratch org). Snowflake replaces it, and both
+# Snowflake + Databricks connections create fully headless (no GUI). The DLO names, SDM
+# apiNames, relationships and measures are UNCHANGED — only the source underneath moved.
+#
+# Snowflake columns are quoted lowercase and match the measure field references. Three marts
+# lack single-column grain keys (stale load) so we federate grain-key VIEWS instead
+# (snowflake/grain_key_views.sql adds play_key/game_attendee_key/team_game_key).
 STREAMS = [
-    # engine, connection,          database,               schema,            object,                    pk,                  stream name,               label,                      dlo name
-    ("bigquery",   "BigQuery_Baseball",   BQ_PROJECT,        "wax_baseball_dbt", "fct_game_attendee",       "game_attendee_key", "Fct_Game_Attendee",       "Fct Game Attendee",        "Fct_Game_Attendee__dll"),
-    ("bigquery",   "BigQuery_Baseball",   BQ_PROJECT,        "wax_baseball_dbt", "fct_plays",               "play_key",          "Fct_Plays",               "Fct Plays",                "Fct_Plays__dll"),
-    ("bigquery",   "BigQuery_Baseball",   BQ_PROJECT,        "wax_baseball_dbt", "fct_attended_team_games", "team_game_key",     "Fct_Attended_Team_Games", "Fct Attended Team Games",  "Fct_Attended_Team_Games__dll"),
-    ("bigquery",   "BigQuery_Baseball",   BQ_PROJECT,        "wax_baseball_dbt", "fct_hof_sightings",       "player_id",         "Fct_Hof_Sightings",       "Fct Hof Sightings",        "Fct_Hof_Sightings__dll"),
-    ("databricks", "Databricks_Baseball", "lahman_baseball", "baseball_data",    "people",                  "playerID",          "Lahman_People",           "Lahman People",            "Lahman_People__dll"),
-    ("databricks", "Databricks_Baseball", "lahman_baseball", "baseball_data",    "halloffame",              "playerID",          "Lahman_Hall_Of_Fame",     "Lahman Hall Of Fame",      "Lahman_Hall_Of_Fame__dll"),
+    # engine, connection,          database,   schema,          object,                      pk,                  stream name,               label,                      dlo name
+    ("snowflake",  "Snowflake_Baseball",  "BASEBALL", "WAX_BASEBALL", "FCT_ATTENDED_GAMES",        "wax_game_id",       "Attended_Games",          "Attended Games",           "Attended_Games__dll"),
+    ("snowflake",  "Snowflake_Baseball",  "BASEBALL", "WAX_BASEBALL", "V_FCT_GAME_ATTENDEE",       "game_attendee_key", "Fct_Game_Attendee",       "Fct Game Attendee",        "Fct_Game_Attendee__dll"),
+    ("snowflake",  "Snowflake_Baseball",  "BASEBALL", "WAX_BASEBALL", "V_FCT_PLAYS",               "play_key",          "Fct_Plays",               "Fct Plays",                "Fct_Plays__dll"),
+    ("snowflake",  "Snowflake_Baseball",  "BASEBALL", "WAX_BASEBALL", "V_FCT_ATTENDED_TEAM_GAMES", "team_game_key",     "Fct_Attended_Team_Games", "Fct Attended Team Games",  "Fct_Attended_Team_Games__dll"),
+    ("snowflake",  "Snowflake_Baseball",  "BASEBALL", "WAX_BASEBALL", "FCT_HOF_SIGHTINGS",         "player_id",         "Fct_Hof_Sightings",       "Fct Hof Sightings",        "Fct_Hof_Sightings__dll"),
+    ("databricks", "Databricks_Baseball", "lahman_baseball", "baseball_data", "people",             "playerID",          "Lahman_People",           "Lahman People",            "Lahman_People__dll"),
+    ("databricks", "Databricks_Baseball", "lahman_baseball", "baseball_data", "halloffame",         "playerID",          "Lahman_Hall_Of_Fame",     "Lahman Hall Of Fame",      "Lahman_Hall_Of_Fame__dll"),
 ]
+
+SNOWFLAKE_TYPE_MAP = {
+    "TEXT": "Text", "VARCHAR": "Text", "CHAR": "Text", "STRING": "Text",
+    "NUMBER": "Number", "DECIMAL": "Number", "NUMERIC": "Number", "INT": "Number",
+    "INTEGER": "Number", "BIGINT": "Number", "SMALLINT": "Number", "FLOAT": "Number",
+    "DOUBLE": "Number", "REAL": "Number", "BOOLEAN": "Boolean", "DATE": "Date",
+    "TIMESTAMP_NTZ": "DateTime", "TIMESTAMP_LTZ": "DateTime", "TIMESTAMP_TZ": "DateTime",
+    "TIMESTAMP": "DateTime", "DATETIME": "DateTime", "TIME": "Text",
+}
 
 BQ_TYPE_MAP = {
     "STRING": "Text", "INTEGER": "Number", "INT64": "Number", "FLOAT": "Number",
@@ -49,6 +70,29 @@ def dbx_type(t: str) -> str:
     if t.startswith("timestamp"):
         return "DateTime"
     return "Text"
+
+
+def snow_type(t: str) -> str:
+    return SNOWFLAKE_TYPE_MAP.get(t.upper().split("(")[0].strip(), "Text")
+
+
+def snow_fields(database: str, schema: str, table: str) -> list[tuple[str, str]]:
+    """Introspect a Snowflake table/view via the snow CLI (--format json).
+    Column names are quoted lowercase; INFORMATION_SCHEMA returns them verbatim."""
+    import json as _json
+    import shutil as _shutil
+    import subprocess as _subprocess
+    snow = _shutil.which("snow") or sys.exit("snow CLI not found on PATH")
+    q = (f"SELECT COLUMN_NAME, DATA_TYPE FROM {database}.INFORMATION_SCHEMA.COLUMNS "
+         f"WHERE TABLE_SCHEMA = '{schema}' AND TABLE_NAME = '{table}' ORDER BY ORDINAL_POSITION")
+    out = _subprocess.run([snow, "sql", "-c", SNOW_CONN, "-q", q, "--format", "json"],
+                          capture_output=True, text=True)
+    text = out.stdout.strip()
+    start = text.find("[")
+    if start == -1:
+        raise SystemExit(f"snow introspection failed for {schema}.{table}: {(out.stdout or out.stderr)[:300]}")
+    rows = _json.loads(text[start:])
+    return [(r["COLUMN_NAME"], snow_type(r["DATA_TYPE"])) for r in rows]
 
 
 def bq_fields(dataset: str, table: str) -> list[tuple[str, str]]:
@@ -83,7 +127,12 @@ def dbx_fields(catalog: str, schema: str, table: str) -> list[tuple[str, str]]:
 
 
 def build_payload(engine, connection, database, schema, object_name, pk, name, label, dlo_name) -> dict:
-    fields = bq_fields(schema, object_name) if engine == "bigquery" else dbx_fields(database, schema, object_name)
+    if engine == "bigquery":
+        fields = bq_fields(schema, object_name)
+    elif engine == "snowflake":
+        fields = snow_fields(database, schema, object_name)
+    else:
+        fields = dbx_fields(database, schema, object_name)
     if pk not in [f for f, _ in fields]:
         raise SystemExit(f"{object_name}: primary key column '{pk}' not found in source schema")
     return {

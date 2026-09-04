@@ -1,0 +1,10 @@
+[
+  { "_note": "6 of 7 ride their DLOs directly; only Attended_Games is a Dmo. LABEL IS LOAD-BEARING: the SDM data-object apiName is derived from the label (spaces->underscores), and relationships.json + calc_measures.json reference those apiNames. 'Game Attendee' -> Game_Attendee, 'HOF Sightings' -> HOF_Sightings, etc. shouldIncludeAllFields=true auto-includes every field as a dimension/measurement. Order: Attended_Games first (matches devorg)." },
+  { "dataObjectName": "Attended_Games__dlm",          "label": "Attended Games",      "dataObjectType": "Dmo", "shouldIncludeAllFields": true },
+  { "dataObjectName": "Fct_Game_Attendee__dll",       "label": "Game Attendee",       "dataObjectType": "Dlo", "shouldIncludeAllFields": true },
+  { "dataObjectName": "Fct_Plays__dll",               "label": "Plays",               "dataObjectType": "Dlo", "shouldIncludeAllFields": true },
+  { "dataObjectName": "Fct_Attended_Team_Games__dll", "label": "Attended Team Games", "dataObjectType": "Dlo", "shouldIncludeAllFields": true },
+  { "dataObjectName": "Lahman_People__dll",           "label": "Lahman People",       "dataObjectType": "Dlo", "shouldIncludeAllFields": true },
+  { "dataObjectName": "Lahman_Hall_Of_Fame__dll",     "label": "Lahman Hall Of Fame", "dataObjectType": "Dlo", "shouldIncludeAllFields": true },
+  { "dataObjectName": "Fct_Hof_Sightings__dll",       "label": "HOF Sightings",       "dataObjectType": "Dlo", "shouldIncludeAllFields": true }
+]

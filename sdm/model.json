@@ -1,0 +1,8 @@
+{
+  "_comment": "Keeping_Score SDM shell — captured from devorg (d360_sdm_list 2026-09-03). queryUnrelatedDataObjects=Exception is load-bearing: it makes the model throw NO_PATH_ERROR when a query combines metrics from unrelated fact tables (the join-graph semantics finding — see README). Set on create if honored, else via update in apply_sdm_shell.py.",
+  "apiName": "Keeping_Score",
+  "label": "Keeping Score",
+  "description": "Governed semantic model over the two-cloud federated corpus: attended games, attendees, plays (BigQuery) + Lahman people/HOF (Databricks). Seven governed metrics; the four-way join as native relationships.",
+  "dataspace": "default",
+  "queryUnrelatedDataObjects": "Exception"
+}

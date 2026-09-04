@@ -48,7 +48,12 @@ def sf_post(alias: str, endpoint: str, payload: dict) -> dict | list:
 def apply_list(alias: str, endpoint: str, items: list[dict], name_key: str) -> None:
     for item in items:
         resp = sf_post(alias, endpoint, item)
-        if isinstance(resp, list) or "errorCode" in resp:
+        # Failure shapes: a list ([{errorCode}]), a top-level errorCode, OR the semantic
+        # authoring error shape (enhancedErrorType/errorName with NO errorCode) — the last
+        # one silently read as success before 2026-09-04 (the Game_Year STR() bug hid here).
+        is_err = (isinstance(resp, list)
+                  or "errorCode" in resp or "enhancedErrorType" in resp or "errorName" in resp)
+        if is_err:
             msg = json.dumps(resp)[:300]
             status = "SKIP (exists)" if "DUPLICATE" in msg or "already" in msg.lower() else f"FAIL {msg}"
             print(f"  {status:14s} {item.get(name_key)}")

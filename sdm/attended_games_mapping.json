@@ -1,0 +1,17 @@
+{
+  "_comment": "DLO -> DMO field mapping for Attended_Games. Base names only (no __c); apply_dmo.py resolves each source to the DLO's actual field developer name (case-insensitive base match against the live DLO) and each target to <target>__c. SOURCE = Snowflake BASEBALL.WAX_BASEBALL.FCT_ATTENDED_GAMES (the mart renames several columns vs the old BigQuery raw table: game_date, venue_wax, away_team_name, *_id_wax). Targets are the DMO fields in attended_games_dmo.json (unchanged); the SDM measures read [Attended_Games].[Wax_Game_ID]/[Venue]/[Game_Date] via those DMO fields.",
+  "sourceDlo": "Attended_Games__dll",
+  "targetDmo": "Attended_Games__dlm",
+  "fieldMapping": [
+    { "source": "wax_game_id",      "target": "Wax_Game_ID" },
+    { "source": "game_date",        "target": "Game_Date" },
+    { "source": "venue_wax",        "target": "Venue" },
+    { "source": "away_team_name",   "target": "Away_Team" },
+    { "source": "away_team_id_wax", "target": "Away_Team_ID" },
+    { "source": "home_team_name",   "target": "Home_Team" },
+    { "source": "home_team_id_wax", "target": "Home_Team_ID" },
+    { "source": "city",             "target": "City" },
+    { "source": "state",            "target": "State" },
+    { "source": "game_type_wax",    "target": "Game_Type" }
+  ]
+}
