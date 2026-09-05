@@ -185,14 +185,48 @@ def build_bigquery(bq_key_path: str, gcs_bucket: str = "gs://wax-ss49-spec-sheet
     }
 
 
+GCS = {
+    "label": "GCS_Baseball", "name": "GCS_Baseball",
+    # The entitled GCP door (BigQuery is ACCESS_CHECK in this org, measured 2026-09-05): GA
+    # file-based ingest over Google Cloud Storage. Parquet written by wax_baseball_parity's
+    # export_bigquery.py, one folder per mart under parentDirectory. Auth = a GCS HMAC key
+    # (S3-interop) for SA keeping-score-gcs@augmented-world-262319, roles/storage.objectViewer
+    # on the bucket only; the key JSON is written by `gcloud storage hmac create --format=json`
+    # straight to disk, never printed.
+    "bucket": "wax-keeping-score-parquet",
+    "parentDirectory": "keeping-score/",  # trailing slash is load-bearing: without it the test says CONNECTION_NOT_ESTABLISHED (measured 2026-09-05)
+    "hmac_file": HOME / ".gcs" / "keeping-score-hmac.json",
+}
+
+
+def build_gcs() -> dict:
+    hm = json.loads(pathlib.Path(GCS["hmac_file"]).read_text(encoding="utf-8"))
+    access_id = (hm.get("metadata") or {}).get("accessId") or hm["accessId"]
+    return {
+        "connectorType": "GCS", "label": GCS["label"], "name": GCS["name"],
+        "method": "Ingress",
+        "credentials": [cparam("accessKey", access_id),
+                        cparam("secretKey", hm["secret"])],
+        "parameters": [cparam("bucketName", GCS["bucket"]),
+                       cparam("parentDirectory", GCS["parentDirectory"])],
+    }
+
+
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--org", required=True)
-    p.add_argument("--engine", choices=["snowflake", "databricks", "bigquery", "all"], default="all")
+    p.add_argument("--engine", choices=["snowflake", "databricks", "bigquery", "gcs", "all"], default="all")
     p.add_argument("--bq-key", help="path to BigQuery service-account JSON key")
     args = p.parse_args()
 
-    want = ["snowflake", "databricks", "bigquery"] if args.engine == "all" else [args.engine]
+    want = ["snowflake", "databricks", "bigquery", "gcs"] if args.engine == "all" else [args.engine]
+    if "gcs" in want:
+        # file connector: no database-schemas probe; the test endpoint is the measurement
+        body = build_gcs()
+        create_and_probe(args.org, body, None)
+        test = sf_rest(args.org, f"{API}/connections/actions/test?dataspace={DATASPACE}", "POST",
+                       {k: body[k] for k in ("connectorType", "method", "credentials", "parameters")})
+        print(f"  TEST: {json.dumps(test)[:300]}")
     if "snowflake" in want:
         create_and_probe(args.org, build_snowflake(), SNOWFLAKE["probe_db"])
     if "databricks" in want:

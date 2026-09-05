@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+"""Run (fetch) Data 360 ingest data streams and poll until they finish.
+
+Federated (zero-copy) streams need no run; file-ingest streams (the GCS leg) do — a
+stream is created ACTIVE with lastRunStatus null and stays empty until it runs.
+Endpoint from the d360 MCP source (DataStreamTools.runDataStream): POST /ssot/data-streams/{id}/actions/run
+— the @ApiEndpoint annotation there says /run, the code builds /actions/run, and only /actions/run exists (measured 2026-09-05).
+
+Usage:  py run_datastreams.py --org keeping-score-w6a --suffix _GCP
+        py run_datastreams.py --org keeping-score-w6a --names Fct_Plays_GCP,Lahman_People_GCP
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import shutil
+import subprocess
+import sys
+import time
+
+API = "/services/data/v66.0/ssot/data-streams"
+SF = shutil.which("sf") or sys.exit("sf CLI not found on PATH")
+TERMINAL = {"SUCCESS", "SUCCEEDED", "COMPLETED", "FAILED", "FAILURE", "ERROR", "CANCELLED", "CANCELED", "NO_DATA"}
+
+
+def sf_rest(alias: str, endpoint: str, method: str = "GET") -> dict | list:
+    cmd = [SF, "api", "request", "rest", endpoint, "-o", alias, "--method", method]
+    if method != "GET":
+        cmd += ["--body", "{}", "--header", "Content-Type: application/json"]
+    out = subprocess.run(cmd, capture_output=True, text=True)
+    text = (out.stdout or out.stderr).strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return {"errorCode": "NON_JSON", "message": text[:300]}
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--org", required=True)
+    ap.add_argument("--suffix", default="_GCP", help="run every stream whose name ends with this")
+    ap.add_argument("--names", default="", help="comma-separated explicit stream names (overrides --suffix)")
+    ap.add_argument("--poll-seconds", type=int, default=20)
+    ap.add_argument("--timeout-minutes", type=int, default=30)
+    args = ap.parse_args()
+
+    listing = sf_rest(args.org, f"{API}?limit=100")
+    rows = listing if isinstance(listing, list) else listing.get("dataStreams", [])
+    want = set(n for n in args.names.split(",") if n)
+    targets = [s for s in rows if (s.get("name") in want) if want] if want else \
+              [s for s in rows if str(s.get("name", "")).endswith(args.suffix)]
+    if not targets:
+        sys.exit(f"no streams matched ({'names ' + args.names if want else 'suffix ' + args.suffix})")
+
+    ids = {}
+    for s in targets:
+        sid = s.get("id") or s.get("recordId")
+        resp = sf_rest(args.org, f"{API}/{sid}/actions/run", "POST")
+        err = resp[0] if isinstance(resp, list) and resp and "errorCode" in resp[0] else (resp if "errorCode" in resp else None)
+        print(f"  RUN   {s['name']:32s} {'FAILED: ' + json.dumps(err)[:200] if err else 'queued'}")
+        if not err:
+            ids[s["name"]] = sid
+
+    deadline = time.time() + args.timeout_minutes * 60
+    pending = dict(ids)
+    while pending and time.time() < deadline:
+        time.sleep(args.poll_seconds)
+        for name, sid in list(pending.items()):
+            st = sf_rest(args.org, f"{API}/{sid}")
+            status = str(st.get("lastRunStatus") or "").upper()
+            if status in TERMINAL:
+                print(f"  DONE  {name:32s} {status}  rows={st.get('totalRecordsProcessed') or st.get('recordCount') or '?'}")
+                pending.pop(name)
+        if pending:
+            print(f"  ... waiting on {len(pending)}: {', '.join(pending)}")
+    if pending:
+        print(f"TIMEOUT — still running: {', '.join(pending)}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

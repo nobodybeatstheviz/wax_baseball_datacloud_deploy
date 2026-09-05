@@ -43,6 +43,84 @@ STREAMS = [
     ("databricks", "Databricks_Baseball", "lahman_baseball", "baseball_data", "halloffame",         "playerID",          "Lahman_Hall_Of_Fame",     "Lahman Hall Of Fame",      "Lahman_Hall_Of_Fame__dll"),
 ]
 
+# GCP leg (ruled 2026-09-05): BigQuery's connector is ACCESS_CHECK here, so the entitled GCP door
+# is Google Cloud Storage (GA, file-based ingest). wax_baseball_parity/scripts/export_bigquery.py
+# writes the marts to Parquet; they're uploaded one folder per mart under
+# gs://wax-keeping-score-parquet/keeping-score/<mart>/<mart>.parquet. These streams INGEST (copy),
+# they don't federate — the honest label. Names carry a _GCP suffix so they coexist with the
+# Snowflake/Databricks streams and can back a second SDM (Keeping_Score_GCP) for a three-cloud
+# parity column. Schema is introspected from the Parquet files themselves (pyarrow).
+PARQUET_DIR = pathlib.Path(r"C:\Users\georg\Documents\CODING\wax_baseball_parity\data")
+GCS_CONNECTION = "GCS_Baseball"
+GCS_STREAMS = [
+    # parquet file (no ext),   pk,                  stream name,                   label,                          dlo name
+    ("fct_attended_games",      "wax_game_id",       "Attended_Games_GCP",          "Attended Games GCP",           "Attended_Games_GCP__dll"),
+    ("fct_game_attendee",       "game_attendee_key", "Fct_Game_Attendee_GCP",       "Fct Game Attendee GCP",        "Fct_Game_Attendee_GCP__dll"),
+    ("fct_plays",               "play_key",          "Fct_Plays_GCP",               "Fct Plays GCP",                "Fct_Plays_GCP__dll"),
+    ("fct_attended_team_games", "team_game_key",     "Fct_Attended_Team_Games_GCP", "Fct Attended Team Games GCP",  "Fct_Attended_Team_Games_GCP__dll"),
+    ("fct_hof_sightings",       "player_id",         "Fct_Hof_Sightings_GCP",       "Fct Hof Sightings GCP",        "Fct_Hof_Sightings_GCP__dll"),
+    ("lahman_people",           "playerID",          "Lahman_People_GCP",           "Lahman People GCP",            "Lahman_People_GCP__dll"),
+    ("lahman_halloffame",       "playerID",          "Lahman_Hall_Of_Fame_GCP",     "Lahman Hall Of Fame GCP",      "Lahman_Hall_Of_Fame_GCP__dll"),
+]
+
+
+def parquet_fields(name: str) -> list[tuple[str, str]]:
+    import pyarrow.parquet as pq
+    sch = pq.read_schema(PARQUET_DIR / f"{name}.parquet")
+    out = []
+    for f in sch:
+        t = str(f.type)
+        if t.startswith(("int", "uint", "float", "double", "decimal")):
+            d = "Number"
+        elif t == "bool":
+            d = "Boolean"
+        elif t.startswith("date32"):
+            d = "Date"
+        elif t.startswith("timestamp"):
+            d = "DateTime"
+        else:
+            d = "Text"
+        out.append((f.name, d))
+    return out
+
+
+def build_gcs_payload(parquet: str, pk: str, name: str, label: str, dlo_name: str,
+                      import_dir_style: str = "relative") -> dict:
+    """File-based ingest stream over the GCS connection — the S3 shape from the d360 MCP's
+    payload example (datasource + CONNECTORSFRAMEWORK + INGEST + file advancedAttributes),
+    with Parquet. importDirectory is relative to the connection's parentDirectory by default;
+    `absolute` prefixes it with keeping-score/ (measured which one the connector wants)."""
+    fields = parquet_fields(parquet)
+    if pk not in [f for f, _ in fields]:
+        raise SystemExit(f"{parquet}: primary key column '{pk}' not found in the Parquet schema")
+    import_dir = f"{parquet}/" if import_dir_style == "relative" else f"keeping-score/{parquet}/"
+    return {
+        "name": name,
+        "label": label,
+        "datasource": "GCS",
+        "datastreamType": "CONNECTORSFRAMEWORK",
+        "dataAccessMode": "INGEST",
+        "connectorInfo": {"connectorType": "DataConnector", "connectorDetails": {"name": GCS_CONNECTION}},
+        "advancedAttributes": {
+            "fileName": f"{parquet}.parquet",
+            "importDirectory": import_dir,
+            "fileType": "PARQUET",
+            "headerlessRetrievalEnabled": False,
+        },
+        "sourceFields": [{"name": f, "dataType": t} for f, t in fields],
+        "mappings": [{"sourceFieldLabel": f, "targetFieldName": f, "targetFieldReturntype": t} for f, t in fields],
+        "dataLakeObjectInfo": {
+            "name": dlo_name, "label": label, "category": "Other",
+            "dataLakeFieldInputRepresentations": [
+                {"name": f, "label": f, "dataType": t, "isPrimaryKey": f == pk} for f, t in fields
+            ],
+            "dataspaceInfo": [{"name": "default"}],
+        },
+        "refreshConfig": {"refreshMode": "TOTAL_REPLACE", "isAccelerationEnabled": False,
+                          "frequency": {"frequencyType": "None"}},
+    }
+
+
 SNOWFLAKE_TYPE_MAP = {
     "TEXT": "Text", "VARCHAR": "Text", "CHAR": "Text", "STRING": "Text",
     "NUMBER": "Number", "DECIMAL": "Number", "NUMERIC": "Number", "INT": "Number",
@@ -170,13 +248,27 @@ def build_payload(engine, connection, database, schema, object_name, pk, name, l
 
 
 def main() -> None:
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--engine", choices=["federated", "gcs", "all"], default="federated",
+                    help="federated = the Snowflake+Databricks zero-copy streams; gcs = the Parquet-ingest streams")
+    ap.add_argument("--gcs-dir-style", choices=["relative", "absolute"], default="relative")
+    args = ap.parse_args()
     PAYLOAD_DIR.mkdir(exist_ok=True)
-    for spec in STREAMS:
-        payload = build_payload(*spec)
-        out = PAYLOAD_DIR / f"{spec[6]}.json"
-        out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        n = len(payload["sourceFields"])
-        print(f"wrote {out.name}  ({n} fields, pk={spec[5]})")
+    if args.engine in ("federated", "all"):
+        for spec in STREAMS:
+            payload = build_payload(*spec)
+            out = PAYLOAD_DIR / f"{spec[6]}.json"
+            out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            n = len(payload["sourceFields"])
+            print(f"wrote {out.name}  ({n} fields, pk={spec[5]})")
+    if args.engine in ("gcs", "all"):
+        (PAYLOAD_DIR / "gcs").mkdir(exist_ok=True)
+        for spec in GCS_STREAMS:
+            payload = build_gcs_payload(*spec, import_dir_style=args.gcs_dir_style)
+            out = PAYLOAD_DIR / "gcs" / f"{spec[2]}.json"
+            out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            print(f"wrote gcs/{out.name}  ({len(payload['sourceFields'])} fields, pk={spec[1]})")
 
 
 if __name__ == "__main__":

@@ -40,9 +40,10 @@ def sf_rest(alias: str, endpoint: str, method: str = "GET", body_file: pathlib.P
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--org", default="devorg", help="sf CLI org alias to deploy into")
+    parser.add_argument("--dir", default="", help="payload subfolder (e.g. gcs for the Parquet-ingest streams); default = the federated streams")
     args = parser.parse_args()
 
-    payloads = sorted(PAYLOAD_DIR.glob("*.json"))
+    payloads = sorted((PAYLOAD_DIR / args.dir).glob("*.json"))
     if not payloads:
         sys.exit("No payloads found — run generate_payloads.py first.")
 
