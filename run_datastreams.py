@@ -53,30 +53,33 @@ def main() -> None:
     if not targets:
         sys.exit(f"no streams matched ({'names ' + args.names if want else 'suffix ' + args.suffix})")
 
-    ids = {}
+    # SERIAL by construction (measured 2026-09-05): seven concurrent runs on one file connection
+    # -> one SUCCESS, six job-level FAILUREs with empty problem-record DLOs; the same six
+    # re-run one at a time all succeeded. So: run, wait for terminal, then the next.
+    failures = 0
     for s in targets:
-        sid = s.get("id") or s.get("recordId")
+        name, sid = s["name"], (s.get("id") or s.get("recordId"))
         resp = sf_rest(args.org, f"{API}/{sid}/actions/run", "POST")
         err = resp[0] if isinstance(resp, list) and resp and "errorCode" in resp[0] else (resp if "errorCode" in resp else None)
-        print(f"  RUN   {s['name']:32s} {'FAILED: ' + json.dumps(err)[:200] if err else 'queued'}")
-        if not err:
-            ids[s["name"]] = sid
-
-    deadline = time.time() + args.timeout_minutes * 60
-    pending = dict(ids)
-    while pending and time.time() < deadline:
-        time.sleep(args.poll_seconds)
-        for name, sid in list(pending.items()):
+        print(f"  RUN   {name:32s} {'FAILED: ' + json.dumps(err)[:200] if err else 'queued'}")
+        if err:
+            failures += 1
+            continue
+        deadline = time.time() + args.timeout_minutes * 60
+        status = ""
+        while time.time() < deadline:
+            time.sleep(args.poll_seconds)
             st = sf_rest(args.org, f"{API}/{sid}")
             status = str(st.get("lastRunStatus") or "").upper()
             if status in TERMINAL:
-                print(f"  DONE  {name:32s} {status}  rows={st.get('totalRecordsProcessed') or st.get('recordCount') or '?'}")
-                pending.pop(name)
-        if pending:
-            print(f"  ... waiting on {len(pending)}: {', '.join(pending)}")
-    if pending:
-        print(f"TIMEOUT — still running: {', '.join(pending)}")
-        sys.exit(1)
+                break
+        if status in TERMINAL:
+            print(f"  DONE  {name:32s} {status}")
+            failures += status not in ("SUCCESS", "SUCCEEDED", "COMPLETED")
+        else:
+            print(f"  TIMEOUT {name:30s} still {status or 'PENDING'} after {args.timeout_minutes} min — moving on")
+            failures += 1
+    sys.exit(1 if failures else 0)
 
 
 if __name__ == "__main__":

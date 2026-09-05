@@ -173,6 +173,18 @@ Measured 2026-09-05 on `keeping-score-w6a`, after the Beta Connectors toggle:
   the working hypothesis; remaining streams re-run one at a time. No run-history endpoint
   (`/runs`, `/run-history`, `/actions/runs` all 404); failures land in
   `problemRecordDataLakeObjectName` (`PR_<dlo>`), queryable via `/ssot/query-sql`.
+- 2026-09-05 — **Concurrency confirmed:** re-run one at a time, `Fct_Hof_Sightings_GCP` ·
+  `Fct_Game_Attendee_GCP` · `Fct_Attended_Team_Games_GCP` · `Lahman_Hall_Of_Fame_GCP` ·
+  `Lahman_People_GCP` all **SUCCESS**; DLO counts 44 · 320 · 356 · 1,543 · 24,270. The
+  problem-record DLOs were empty — the first-pass failures were job-level, not row-level.
+  `run_datastreams.py` should run streams **serially by default** (todo: make `--suffix` iterate
+  one at a time). Two open items: (a) **`Fct_Plays_GCP` stuck `PENDING`** (>40 min, 0 rows) after
+  its first-pass collision — re-triggered, watching; (b) 🅿️ **`Lahman_Hall_Of_Fame_GCP` = 1,543
+  rows of 6,426** — `TOTAL_REPLACE` on PK `playerID` keeps one ballot row per player (Snowflake/
+  Databricks legs carry the full table; the SDM's `HOF_Batters_Seen_Graph_GCP` may undercount if
+  the surviving row isn't the inducted one). Fix = a composite ballot key
+  (`playerID_yearid_votedBy`) added in the export and used as the DLO PK — a generator change +
+  stream recreate; parked until the parity run shows whether it bites.
 - **Proposed shape (RULED GO by Wax 2026-09-05 — "we can do this. lets go"):** BigQuery marts (`wax_baseball_dbt`) →
   `bq extract --destination_format PARQUET` → `gs://<new bucket>/keeping-score/<mart>/` → D360 `GCS`
   connection → 7 data streams → DLOs (parallel to the Snowflake ones) → the SDM's data objects

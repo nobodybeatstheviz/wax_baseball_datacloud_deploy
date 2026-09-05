@@ -106,6 +106,47 @@ Golden battery, all exact: games 178 · stadiums 22 · HR 400 · runs 1706 · by
 - Use `d360_connection_test` (`POST /ssot/connections/actions/test`) for a specific error — `create`
   collapses everything to a generic `INTERNAL_ERROR`.
 
+## The GCP leg — GCS ingest (added 2026-09-05; BigQuery zero-copy stays walled, see below)
+
+A third D360 model, `Keeping_Score_GCP`, over the same marts exported from BigQuery to Parquet in
+Google Cloud Storage and **ingested** (copied) through the GA `GCS` connector — the entitled GCP
+door. Ingest, not federation: the honest label. Everything headless.
+
+```bash
+# GCP side (once)
+gcloud storage buckets create gs://wax-keeping-score-parquet --project=augmented-world-262319 --location=us-east1 --uniform-bucket-level-access
+gcloud iam service-accounts create keeping-score-gcs --project=augmented-world-262319
+SA=keeping-score-gcs@augmented-world-262319.iam.gserviceaccount.com
+gcloud storage buckets add-iam-policy-binding gs://wax-keeping-score-parquet --member=serviceAccount:$SA --role=roles/storage.objectViewer
+gcloud storage buckets add-iam-policy-binding gs://wax-keeping-score-parquet --member=serviceAccount:$SA --role=roles/storage.legacyBucketReader   # HeadBucket needs buckets.get
+mkdir -p ~/.gcs && gcloud storage hmac create $SA --project=augmented-world-262319 --format=json > ~/.gcs/keeping-score-hmac.json   # secret to disk only
+
+# data (rerun whenever the marts change)
+cd C:/Users/georg/Documents/CODING/wax_baseball_parity && py scripts/export_bigquery.py     # 8 marts -> data/*.parquet
+#   + lahman people / hall_of_fame from BigQuery `lahman` -> data/lahman_people.parquet, data/lahman_halloffame.parquet
+for f in data/*.parquet; do n=$(basename $f .parquet); gcloud storage cp $f gs://wax-keeping-score-parquet/keeping-score/$n/$n.parquet; done
+
+# D360 side
+cd C:/Users/georg/Documents/CODING/wax_baseball_datacloud_deploy
+py apply_connections.py --org $ORG --engine gcs          # GCS_Baseball; parentDirectory MUST end with '/'
+py generate_payloads.py --engine gcs                     # pyarrow-introspected, S3-shape payloads -> payloads/gcs/
+py apply_datastreams.py --org $ORG --dir gcs             # 7 *_GCP streams -> *_GCP__dll (created ACTIVE, empty)
+py run_datastreams.py --org $ORG --suffix _GCP           # SERIAL runs (concurrent runs on one file connection fail)
+py apply_sdm_gcp.py --org $ORG                           # shell + 7 objects, then relationships/measures/dims by introspection
+```
+
+Verify: `D360_ORG=$ORG py scripts/parity_harness.py` in `wax_baseball_parity` — the `d360_gcp` column.
+
+Gotchas (all measured 2026-09-05, all handled in the scripts): `parentDirectory` without a trailing
+slash → `CONNECTION_NOT_ESTABLISHED`; the connection **test** body is `connectorType, method,
+credentials, parameters` (no `name`); the run endpoint is `/actions/run` (the MCP annotation says
+`/run`); **runs must be serial**; semantic apiNames are suffixed **org-wide** (`Attended_Games2`,
+`game_date8`) so the SDM generator reads the model back instead of predicting; the already-exists
+error is spelled "Saving semantic entity failed: Unique…"; a successful DELETE is 204/empty; BigQuery
+types Lahman `inducted` as BOOLEAN (`= true`, not `'Y'`); `TOTAL_REPLACE` dedupes on the DLO PK, so
+`Lahman_Hall_Of_Fame_GCP` keeps one ballot row per `playerID` (1,543 of 6,426) until a composite key
+is added.
+
 ## BigQuery — deferred (entitlement wall, not GUI, not client-fixable)
 
 BigQuery's connector is `ACCESS_CHECK` release level in this scratch org. Measured 2026-09-04:
