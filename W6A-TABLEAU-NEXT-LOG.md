@@ -519,6 +519,36 @@ Measured 2026-09-05 on `keeping-score-w6a`, after the Beta Connectors toggle:
   action output variable to be populated before the topic may respond (Agent Script
   `if`-gating on `@variables`), or make the topic's response node unreachable without the action.
   Wax's call on which. Both runs are receipts: the Testing Center file + the preview trace dir.
+- 2026-09-09 — 🟢 **BOTH RULINGS SHIPPED — `Highlight_Scout` v3 active in devorg.** (1) Date filter
+  in Apex: `GameHighlightsSearch` takes `gameDate/homeTeam/awayTeam` (not a free-text query),
+  builds the query itself, and brackets the game day with YouTube's `publishedAfter/Before`
+  (2-day window); a lenient parser accepts ISO · 10/5/2024 · October 5, 2024 · Oct 5 2024 ·
+  5 October 2024; `status` = ok | no_results | bad_date:<raw> | http_<code>; `videosText` is the
+  pre-rendered answer. Regression (`scripts/apex/test_highlights_search.apex`): ALDS 10/5/24 →
+  3 videos, all Game 1, all published 10/6 UTC; every date form → 2024-10-05; garbage → bad_date.
+  (2) Structural gate in Agent Script: `variables:` block + `set_game` (`@utils.setVariables`,
+  resets `search_done`) + a procedural `run @actions.search_highlights` inside `instructions: ->`
+  fired by `if game_date and home_team and away_team and not search_done`, outputs captured with
+  `set @variables...`, response rendered from `{!@variables.videos_text}`. Lessons: Agent Script
+  has **no nested `if`** (flatten to top-level conditions); `sf agent activate` prompts for the
+  version non-interactively — pass `--version N`; `preview send` needs `-n` as well as
+  `--session-id`. **Live preview v3 trace: `set_game` → 4 VariableUpdateSteps → FunctionStep
+  (the run) → status ok → the three Game 1 videos verbatim.** The fabricated no-result is gone
+  on the live surface.
+- 2026-09-09 — ⚠️ **Two test-runner findings, both recorded not resolved.** (a) Legacy Testing
+  Center (`AiEvaluationDefinition`) still answers "no highlights were found" for cases 1–2 on
+  v2 and v3, with `search_highlights` invoked **twice** per case and the status code never
+  quoted despite the instruction. Live preview with the identical utterance and version passes.
+  The double invocation says `search_done=True` didn't persist → the runner appears not to carry
+  variables across reasoning iterations, so the run fires with an empty date. Hypothesis, not
+  measured — Testing Center exposes no action inputs/outputs. (b) The Agentforce Studio (NGT)
+  runner (`AiTestingDefinition`, `--test-runner agentforce-studio`) is unusable on devorg:
+  create fails "Required fields are missing: [MasterLabel]" and a direct metadata deploy rejects
+  `<masterLabel>` and `<label>` in every position ("invalid at this location") — the type's
+  schema and its validation disagree on this org/CLI (2.149.9, plugin-agent 2.0.3). NGT spec
+  kept at `tests/Highlight_Scout-youtube-action.ngt.yaml` for when it works. Design consequence
+  for ADR §7: **a grounding instruction is not a gate — gate structurally, and treat a test
+  runner's verdict as one surface, not the truth.**
 - 2026-09-06 — 🔴 **HOF DEDUPE BITES: `HOF_Batters_Seen_Graph_GCP` = 24 vs 35.** The parked
   condition fired on direct measurement — the G-battery never exercises this measure (G5=44 rides
   `fct_hof_sightings`; the receipts' 42/42 was silent on the deduped Lahman table). Fix executed as
