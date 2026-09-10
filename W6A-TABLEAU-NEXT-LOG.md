@@ -185,6 +185,14 @@ Measured 2026-09-05 on `keeping-score-w6a`, after the Beta Connectors toggle:
   the surviving row isn't the inducted one). Fix = a composite ballot key
   (`playerID_yearid_votedBy`) added in the export and used as the DLO PK — a generator change +
   stream recreate; parked until the parity run shows whether it bites.
+- 2026-09-05 01:49 — **`Fct_Plays_GCP` SUCCESS, 14,406 rows** after a re-trigger (~55 min from
+  first collision to landing; the second `/actions/run` on a PENDING stream returned
+  `success:true` and did not error). **All 7 GCP DLOs populated:** 178 · 320 · 14,406 · 356 · 44 ·
+  24,270 · 1,543 (HOF dedupe, see above).
+- 2026-09-05 — 🟢 **PARITY 42/42 — six surfaces.** `parity_harness.py` with `d360_gcp`:
+  G1–G5, G0a, G0b × bigquery · databricks · snowflake · d360 · tableau_next · **d360_gcp** all
+  PASS; `parity-receipts.md` regenerated. Three clouds inside one D360 org (Snowflake zero-copy ·
+  Databricks zero-copy · GCS ingest) answering one metric contract.
 - **Proposed shape (RULED GO by Wax 2026-09-05 — "we can do this. lets go"):** BigQuery marts (`wax_baseball_dbt`) →
   `bq extract --destination_format PARQUET` → `gs://<new bucket>/keeping-score/<mart>/` → D360 `GCS`
   connection → 7 data streams → DLOs (parallel to the Snowflake ones) → the SDM's data objects
@@ -401,3 +409,144 @@ Measured 2026-09-05 on `keeping-score-w6a`, after the Beta Connectors toggle:
 - 2026-09-04 — **TN REST endpoint path (workspaces) — SUPERSEDED by the Beta MCP above** — `/services/data/v67.0/connect`
   root = NOT_FOUND; dev-docs host 403s automated fetch. Needs org introspection or a browser grab
   of the [TN REST API Get-Started](https://developer.salesforce.com/docs/analytics/tableau-next-rest-api/guide/get-started.html) path. Deferred (workspace may be optional).
+- 2026-09-06 — **PIECE 3 OPENED. YouTube key re-minted** on `augmented-world-262319`, restricted to
+  YouTube Data API v3, keyString only in `~/.gcs/keeping-score-youtube-key.json`. ⚠️ Lesson: `gcloud
+  services api-keys create` prints the operation result — keyString included — to **stderr**, so a
+  stdout redirect leaks it (the HMAC command writes to stdout; same CLI, two streams). First mint
+  leaked to console → deleted, re-minted with both streams suppressed. Verified live via the
+  `X-Goog-Api-Key` **header** (the injection a Named Credential does cleanly; no `key=` query param).
+- 2026-09-06 — 🟢 **CREDENTIAL CHAIN HEADLESS, FIRST TRY.** `wax_baseball_tableau_next`:
+  `YouTube_API` External Credential (Custom protocol, `YouTube_Principal`) + `YouTube_Data_API`
+  Named Credential (`https://www.googleapis.com`, custom header `X-Goog-Api-Key =
+  {!$Credential.YouTube_API.ApiKey}` — HttpHeader params need `sequenceNumber`) +
+  `YouTube_API_Access` permset (principal access; Employee Agent = assign to every chatting user,
+  the W7 lesson). The principal secret landed via `POST /named-credentials/credential`
+  (`scripts/set_youtube_credential.py` — direct HTTP; the `sf api request rest` shim 404s every
+  Connect endpoint but `/query`). The runbook's "finicky principal activation" never bit. Anonymous
+  Apex through `callout:YouTube_Data_API` → **HTTP 200**, real highlight results.
+- 2026-09-06 — 🔴 **FINDING — External Service actions don't fit Agent Script.** ESR
+  `YouTubeHighlights` deployed fine (ESR names are **alphanumeric-only**, no underscores) and
+  generates invocable `YouTubeHighlights.searchHighlights` — but its response output is literally
+  named **`200`**, and the Agent Script compiler rejects `200` as an identifier (quoted too). Flow
+  hits the same wall differently: the `200` output is a generated Apex-defined type a hand-written
+  Flow XML can't bind stably. Resolution: **thin invocable Apex wrapper** (`GameHighlightsSearch.cls`,
+  W7's proven `apex://` shape) renaming outputs to `videos`/`videoCount`/`hasData`; the key still
+  rides the External Credential principal — the ESR stays deployed as the registered API contract.
+  Second publish-time rule: Apex `Integer` outputs must be declared `object` +
+  `complex_data_type_name: "lightning__integerType"` (the publisher's own error says so exactly).
+- 2026-09-06 — **`Highlight_Scout` authored as an Agent Script authoring bundle** (aiAuthoringBundles;
+  `sf agent generate agent-spec` is walled — `AgentforceAiAssist` not enabled on this org type — but
+  hand-authored Agent Script needs no LLM assist; `sf agent validate authoring-bundle` → OK).
+  ⛔ **`sf agent publish authoring-bundle` blocked mid-session by a network outage**: the scratch-org
+  authoring API lives on `test.api.salesforce.com`, whose ingress (`test1-uswest2.aws.sfdc.cl`, 3 AWS
+  IPs) stopped answering TCP entirely — measured from two DNS resolvers; `api.salesforce.com` (prod,
+  155.226.x — Salesforce-owned ingress) answers fine, and the lib only falls through to `test.` on
+  404, so no client-side override helps. It answered a publish validation 400 minutes earlier —
+  transient outage, watcher polling. Test spec ready: `tests/Highlight_Scout-youtube-action.yaml`
+  (Yankees–Royals 2024-10-05 ALDS — an attended game).
+- 2026-09-07 — **`test.api.salesforce.com` outage CONFIRMED Salesforce-side (not client).** Persisted
+  >12 h across a session restart. Diagnosed to exhaustion: the scratch-org agent-authoring ingress
+  resolves to 3 AWS us-west-2 IPs (`34.210.29.116` · `44.228.60.86` · `34.213.108.10`) that silently
+  drop TCP:443 (12 s timeout, not a refusal) from **three independent network paths** — home
+  broadband, in-laws' broadband, and 5G cellular. Client is clean: no proxy (`netsh winhttp` direct),
+  no Windows Firewall block rule, no blackhole route (routing to the IPs is normal via the gateway),
+  no third-party firewall product. Controls all pass from the same laptop: `api.salesforce.com`
+  (Salesforce IP space `155.226.144.x`) 200/404, the scratch org host 200, and `s3.us-west-2`
+  (a *different* AWS us-west-2 IP) connects — so it's neither a broad AWS nor an ISP outage, only
+  those 3 ingress IPs. The publisher tries prod first then falls to `test.` on 404, and a scratch
+  org's authoring API 404s on prod → it must use `test.api`, so there's no client-side override.
+  **Piece 3 is build-complete and staged — bundle validated, credential chain proven with a live
+  callout 200, test spec written — pending ONLY Salesforce restoring that ingress.** Retry
+  `sf agent publish authoring-bundle --api-name Highlight_Scout -o keeping-score-w6a` on a normal
+  service day; then activate + run the end-to-end demo.
+- 2026-09-09 — ⛔ **The 9/6–9/7 "outage" diagnosis was WRONG — it's a CLI bug, and the host never
+  worked.** `forcedotcom/cli#3634` (filed 2026-08-28, before our first attempt; labels bug ·
+  validated · investigating; Salesforce work item W-24023175) describes this exact failure. Read
+  from the library on this machine (`@salesforce/agents` 2.0.4 `lib/utils.js`
+  `requestWithEndpointFallback`): publish POSTs `/einstein/ai-agent/v1.1/authoring/agents` to prod
+  `api.salesforce.com` → 404 empty body for scratch orgs / Agentforce DEs → falls back to
+  `test.api.salesforce.com`, whose CNAME is `ingress-internal.core4.test1-uswest2.aws.sfdc.cl` —
+  **internal-only by name**, never accepts public TCP — and the loop throws on the timeout before
+  trying `dev.api` (CNAME `ingress-internal.core002.dev1-uswest2...`, equally dead). Re-measured 9/9:
+  `test.` and `dev.` time out from here AND from an external fetcher; prod 404 in 0.1 s; scratch host
+  200; Trust API 0 active incidents. The 9/6 "validation 400 minutes earlier" was the `/scripts`
+  route on prod (what `sf agent validate` uses) — a different route on a different host. Lesson: the
+  one check that would have caught it was reading the CNAME target, which literally says "internal";
+  a days-long silent failure with no Trust posting is "by design," not "down." **Ruled (Wax):**
+  reproduction posted to #3634 from this scratch org (CLI 2.149.9 · agent plugin 2.0.3 · node
+  22.19.0 · API 67.0); publish `Highlight_Scout` through Agentforce Builder's Agent Script editor in
+  the UI — one GUI step in the headless thread, recorded as a platform finding — then activate + run
+  the end-to-end demo. Headless publish returns when #3634 ships.
+- 2026-09-09 — ⛔ **The UI path hit the real wall: `keeping-score-w6a` has no Agentforce.** Setup →
+  Agentforce Agents: toggle Off + "You don't have the required permissions" for the SysAdmin user;
+  assigning `UseSetupWithAgentforce` changed nothing. Measured: the only PermissionSetLicense is
+  `TableauEinsteinUserPsl`; `Settings:AgentPlatform` is an *unknown type* here; the scratch def had
+  only `EnableSetPasswordInApi`. Salesforce's own samples (`trailheadapps/agent-script-recipes`,
+  `coral-cloud`) mint with feature **`Einstein1AIPlatform`** + `agentPlatformSettings.enableAgentPlatform`.
+  So the 9/4 "Agentforce enabled headlessly" was half right — `enableEinsteinGptCopilot=true`
+  surfaced the `Bot`/`GenAi*` metadata types and let `validate` pass, but the *product* needs the
+  feature, and features are fixed at mint. **Correction to the 9/4 lesson: metadata types surfacing
+  ≠ the feature being licensed; check `PermissionSetLicense` before declaring a floor dissolved.**
+- 2026-09-09 — 🟢 **PIECE 3 LIVE IN `devorg` — HEADLESS END TO END.** Ruled path A (re-mint
+  rejected: hours, resets the clock, one demo). Stack committed to the tableau-next repo first
+  (`70d1b71`; it had been untracked — the 9/4 evaporation lesson), then to devorg: deploy 6
+  components ✓ · `set_youtube_credential.py devorg` ✓ · permset ✓ · callout 200 ✓ ·
+  **`sf agent publish authoring-bundle` → published in 18 s, no GUI** — prod `api.salesforce.com`
+  serves `/authoring/agents` for this Agentforce DE, so #3634's fallback never fires; follow-up
+  posted to the issue (the chain turns "unlicensed org" into a fake network failure; suggested an
+  entitlement check + a named-host error). `sf agent activate` → v1 active (devorg now holds
+  Baseball_Agent · Baseball_Scout · Superstore_Signal · Highlight_Scout). **Testing Center ran
+  end-to-end, 16 s, not wedged** (`Highlight_Scout_Test`, created from the spec): topic 3/3 ·
+  action 3/3 · outcome 2/3. Case 2 (Red Sox–Rays 5/14/24) and case 3 (off-topic honesty) pass.
+  **Case 1 miss is a real finding:** for the 10/5/24 ALDS game the search returned the whole series
+  (Games 1, 3, 4 — 10/5, 10/9, 10/10) and the agent presented all three, exactly as its "use ONLY
+  the output" instruction says — grounded, not invented, but unfiltered by date. Fix candidates:
+  a date/title filter in `GameHighlightsSearch` (Apex side, deterministic) or a "prefer the
+  date-matched video" line in the topic instructions (LLM side). Wax rules. Receipt on disk:
+  `test-results/test-result-4KBdL0000002ELRWA2.txt` (URLs redacted by the runner).
+  `sf agent preview send` takes `-u/--utterance` AND `-n <agent>` alongside `--session-id`.
+- 2026-09-09 — 🔴 **FINDING: the same utterance, minutes apart, produced opposite behaviors.**
+  Testing Center: `search_highlights` called, 3 videos returned. Live `sf agent preview`
+  (`--use-live-actions`), same published v1: **no action call at all** — the trace
+  (`.sfdx/agents/0XxdL000004GFK9SAO/sessions/01a088e4-…/traces/`) shows
+  UserInput → topic_selector LLMStep → Transition → game_highlights → **one LLMStep →
+  PlannerResponse**, zero `search_highlights` invocation, and the reply *"No highlights were found
+  for the Yankees vs Royals game on October 5, 2024"* — a **fabricated no-result**, stated in
+  defiance of the topic's own "you MUST call search_highlights" instruction. This is the O1
+  failure class (the 9/3 no-action answer) reproduced on a one-action agent with the strongest
+  instruction phrasing available: an instruction is not a gate. Design consequence for ADR §7:
+  the Apex action should be the *only* path to a "found / not found" statement — e.g. require the
+  action output variable to be populated before the topic may respond (Agent Script
+  `if`-gating on `@variables`), or make the topic's response node unreachable without the action.
+  Wax's call on which. Both runs are receipts: the Testing Center file + the preview trace dir.
+- 2026-09-06 — 🔴 **HOF DEDUPE BITES: `HOF_Batters_Seen_Graph_GCP` = 24 vs 35.** The parked
+  condition fired on direct measurement — the G-battery never exercises this measure (G5=44 rides
+  `fct_hof_sightings`; the receipts' 42/42 was silent on the deduped Lahman table). Fix executed as
+  ruled: `ballot_key = playerID_yearid_votedBy` (verified unique over all 6,426 rows in BigQuery)
+  derived in `export_bigquery.py` — which now **generator-owns the Lahman exports** (they'd been
+  ad hoc) — stream PK flipped in `generate_payloads.py`, parquet re-uploaded. Recreate sequence
+  measured: the stream DELETE returns **412 CANNOT_DELETE_ENTITY while the SDM references the DLO**
+  (the `sf` shim swallows the 412 as an empty 204-looking body — direct HTTP showed it); detach
+  order that works: calc measure `HOF_Batters_Seen_Graph_GCP` → relationship
+  `Player_to_Hall_of_Fame_GCP` → data object → stream+DLO (all 204), deletion propagates async
+  (~seconds), then `apply_datastreams.py` recreates (pk=ballot_key) and `apply_sdm_gcp.py` re-adds
+  the detached trio idempotently. Ingest re-run in flight; acceptance = graph measure back to 35 +
+  full harness rerun.
+- 2026-09-06 — 🟢 **HOF COMPOSITE KEY VERIFIED: `HOF_Batters_Seen_Graph_GCP` 24 → 35 = reference.**
+  Recreated stream ran SUCCESS on the first serial trigger; `Lahman_Hall_Of_Fame_GCP__dll` = **6,426
+  rows** (was 1,543). The SDM re-add came back as `Lahman_Hall_Of_Fame1` (org-wide suffix rotation,
+  as designed) and the generator re-resolved relationship + measure against it untouched.
+- 2026-09-06 — ⚠️ **Harness rerun: 5 surfaces × 7 = 35/35 PASS (incl. the fixed d360_gcp); the
+  `tableau_next` column is auth-walled, not mismatched.** The `tableau-next-pilot` OAuth in Claude
+  Code's store is gone/expired (~1 day after mint — the 9/5 "refresh tokens live indefinitely" read
+  is falsified for this ECA config); a `claude -p` subprocess can't restore it — re-auth is the
+  browser ceremony by design. `parity-receipts.md` currently reads "❌ MISMATCH" from the auth
+  errors — regenerate after **Wax runs `claude mcp login tableau-next-pilot` (+ `tableau-next`)**;
+  values are expected unchanged (the SDM under it is untouched, and d360 reads the same model 7/7). A curated skills
+  library (100+) with Claude Code plugins under `plugins/builder/` — `salesforce-development`
+  auto-detects a DX project and resolves **Skills → Salesforce CLI → hosted MCP** in that order;
+  skills directly adjacent to this build: `agentforce-generate` · `agentforce-test` ·
+  `agentforce-observe` · `agentforce-d360-analyze` · `agentforce-architecture-analyze` ·
+  `data360-schema-get` · `data360-code-extension-generate` · `platform-observability`. Install is
+  `npx skills add forcedotcom/sf-skills` (or the plugin). Jaganpro/sf-skills is archived into
+  `forcedotcom/afv-library`. Not installed — Wax's call.
